@@ -6,9 +6,23 @@ from cocotb.triggers import First, PythonTrigger
 import pyuvm as uvm
 import random
 
+from pyuvm.s13_uvm_component import uvm_component
+
 from cocotb_utils import anext
 
-class BusSeqItem(uvm.uvm_sequence_item):
+class BusReadSeqItem(uvm.uvm_sequence_item):
+    def __init__(self, name):
+        super().__init__(name)
+        self.addr = None
+        self.addr_width = 32
+    def __str__(self):
+        res = f'{self.get_name()} : '
+        res += f'addr: 0x{self.addr:0{self.addr_width//4}X} '
+        return res
+    def randomize(self):
+        self.addr = random.randint(0, (2**self.addr_width)-1)
+
+class BusWriteSeqItem(uvm.uvm_sequence_item):
     def __init__(self, name):
         super().__init__(name)
         self.addr = None
@@ -17,58 +31,32 @@ class BusSeqItem(uvm.uvm_sequence_item):
         self.addr_width = 32
         self.data_width = 32
         self.strobe_width = self.data_width // 8
-    def __eq__(self, other):
-        same = self.addr == other.addr
-        if self.data is not None or other.data is not None:
-            same = same and self.data == other.data
-        return same
     def __str__(self):
         res = f'{self.get_name()} : '
-        if self.data is not None:
-            res += f'data: 0x{self.data:0{self.data_width//4}X} '
-        if self.addr is not None:
-            res += f'addr: 0x{self.addr:0{self.addr_width//4}X} '
-        if self.strobe is not None:
-            res += f'strobe: 0b{self.strobe:0{self.strobe_width}b}'
+        res += f'data: 0x{self.data:0{self.data_width//4}X} '
+        res += f'addr: 0x{self.addr:0{self.addr_width//4}X} '
+        res += f'strobe: 0b{self.strobe:0{self.strobe_width}b}'
         return res
     def randomize(self):
         self.addr = random.randint(0, (2**self.addr_width)-1)
-        if random.choice([False,True]):
-            self.data = random.randint(0, (2**self.data_width)-1)
-            self.strobe = random.randint(0, (2**self.strobe_width)-1)
+        self.data = random.randint(0, (2**self.data_width)-1)
+        self.strobe = random.randint(0, (2**self.strobe_width)-1)
 
-class BusSeq(uvm.uvm_sequence):
+class BusReadSeq(uvm.uvm_sequence):
     async def body(self):
-        for i in range(10):
-            bus_tr = BusSeqItem("bus_tr")
-            await self.start_item(bus_tr)
-            bus_tr.randomize()
-            await self.finish_item(bus_tr)
+        for _ in range(10):
+            bus_read_tr = BusReadSeqItem("bus_read_tr")
+            await self.start_item(bus_read_tr)
+            bus_read_tr.randomize()
+            await self.finish_item(bus_read_tr)
 
-class BusDriver(uvm.uvm_driver):
-    def connect_phase(self):
-        self.bfm = self.cdb_get("BUS_BFM")
-    async def run_phase(self):
-        while True:
-            transaction: BusSeqItem = await self.seq_item_port.get_next_item()
-            if transaction.data is None:
-                await self.bfm['read'].addr.send(addr=transaction.addr)
-            else:
-                await self.bfm['write'].req.send(addr=transaction.addr,data=transaction.data,strobe=transaction.strobe)
-            self.logger.debug(f"Sent transaction: {transaction}")
-            self.seq_item_port.item_done()
-
-class Coverage(uvm.uvm_subscriber):
-    def end_of_elaboration_phase(self):
-        self.cvg = set()
-    def write(self, bus_transaction):
-        transaction_type = 'write' if 'resp' in bus_transaction else 'read'
-        self.cvg.add(transaction_type)
-    def check_phase(self):
-        target = {'write','read'}
-        if len(target - self.cvg) > 0:
-            self.logger.error(f"Functional coverage error. "
-                              f"Missed: {target-self.cvg}")
+class BusWriteSeq(uvm.uvm_sequence):
+    async def body(self):
+        for _ in range(10):
+            bus_write_tr = BusWriteSeqItem("bus_write_tr")
+            await self.start_item(bus_write_tr)
+            bus_write_tr.randomize()
+            await self.finish_item(bus_write_tr)
 
 class Scoreboard(uvm.uvm_component):
     def build_phase(self):
@@ -86,7 +74,7 @@ class Scoreboard(uvm.uvm_component):
             _, actual_result = self.wb_port.try_get()
             ref_success, ref = self.bus_port.try_get()
             if not ref_success:
-                self.logger.critical(f"result {actual_result} had no command")
+                self.logger.critical(f"result {actual_result} had no bus transaction")
             else:
                 if ref == actual_result:
                     self.logger.info(f"PASSED: {ref} = {actual_result}")
@@ -104,44 +92,98 @@ class WbMonitor(uvm.uvm_component):
     async def run_phase(self):
         while True:
             datum = await anext(self.bfm.sink_receive())
+            self.logger.debug(f"Receiving transaction: {datum}")
             self.ap.write(datum)
 
-class BusMonitor(uvm.uvm_component):
-    def __init__(self, name, parent):
-        super().__init__(name, parent)
+# Sink and Source:
+## Request = read -> addr, write -> req
+## Response = read -> data, write -> resp
+
+class BusRequestDriver(uvm.uvm_driver):
+    def connect_phase(self):
+        self.bfm = self.cdb_get("BFM")
+    async def run_phase(self):
+        while True:
+            seq_item = await self.seq_item_port.get_next_item()
+            if isinstance(seq_item,BusReadSeqItem):
+                await self.bfm.send_request(addr=seq_item.addr)
+            if isinstance(seq_item,BusWriteSeqItem):
+                await self.bfm.send_request(addr=seq_item.addr,data=seq_item.data,strobe=seq_item.strobe)
+            self.logger.debug(f"Sent bus request: {seq_item}")
+            self.seq_item_port.item_done()
+
+class BusRequestMonitor(uvm.uvm_component):
     def build_phase(self):
         self.ap = uvm.uvm_analysis_port("ap", self)
     def connect_phase(self):
-        self.bfm = self.cdb_get("BUS_BFM")
+        self.bfm = self.cdb_get("BFM")
     async def run_phase(self):
         while True:
-            datum = await First(anext(self.bfm['read'].addr.receive()),anext(self.bfm['write'].req.receive()))
+            datum = await anext(self.bfm.get_request())
+            self.logger.debug(f"Receiving bus request: {datum}")
             self.ap.write(datum)
+
+class BusResponseMonitor(uvm.uvm_component):
+    def build_phase(self):
+        self.ap = uvm.uvm_analysis_port("ap", self)
+    def connect_phase(self):
+        self.bfm = self.cdb_get("BFM")
+    async def run_phase(self):
+        while True:
+            datum = await anext(self.bfm.get_response())
+            self.logger.debug(f"Receiving bus response: {datum}")
+            self.ap.write(datum)
+
+class BusSourceAgent(uvm.uvm_agent):
+    def build_phase(self):
+        self.req_ap = uvm.uvm_analysis_port("req_ap", self)
+        self.resp_ap = uvm.uvm_analysis_port("resp_ap", self)
+        self.req_mon = BusRequestMonitor("req_mon", self)
+        self.resp_mon = BusRequestMonitor("resp_mon", self)
+        if self.active:
+            self.req_driver = BusRequestDriver("req_driver", self)
+            self.seqr = uvm.uvm_sequencer("seqr", self)
+            self.cdb_set("SEQR",self.seqr,"")
+    def connect_phase(self):
+        self.req_ap.connect(self.req_ap)
+        self.resp_ap.connect(self.resp_ap)
+        if self.active:
+            self.req_driver.seq_item_port.connect(self.seqr.seq_item_export)
 
 class WbAdapterEnv(uvm.uvm_env):
     def build_phase(self):
         self.wb_mon = WbMonitor("wb_mon", self)
-        self.bus_mon = BusMonitor("bus_mon", self)
+        self.bus_read_agent = BusSourceAgent("bus_read_agent", self)
+        self.bus_write_agent = BusSourceAgent("bus_write_agent", self)
         self.scoreboard = Scoreboard("scoreboard", self)
-        self.coverage = Coverage("coverage", self)
-        self.driver = BusDriver("driver", self)
-        self.seqr = uvm.uvm_sequencer("seqr", self)
-        uvm.ConfigDB().set(None, "*", "SEQR", self.seqr)
     def connect_phase(self):
-        self.bus_mon.ap.connect(self.scoreboard.bus_export)
-        self.bus_mon.ap.connect(self.coverage.analysis_export)
+        self.bus_read_agent.req_ap.connect(self.scoreboard.bus_export)
         self.wb_mon.ap.connect(self.scoreboard.wb_export)
-        self.driver.seq_item_port.connect(self.seqr.seq_item_export)
 
 class WbAdapterTest(uvm.uvm_test):
     def build_phase(self):
+        uvm.ConfigDB().is_tracing = True
         self.env = WbAdapterEnv.create("env", self)
     async def run_phase(self):
         self.raise_objection()
-        seqr = uvm.ConfigDB().get(self, "", "SEQR")
-        seq = BusSeq("seq")
-        await seq.start(seqr)
+        read_seqr = uvm.ConfigDB().get(self, "env.bus_read_agent", "SEQR")
+        write_seqr = uvm.ConfigDB().get(self, "env.bus_write_agent", "SEQR")
+        read_seq = BusReadSeq("read_seq")
+        write_seq = BusWriteSeq("write_seq")
+        await read_seq.start(read_seqr)
+        await write_seq.start(write_seqr)
         self.drop_objection()
+        assert False
     def end_of_elaboration_phase(self):
         self.set_logging_level_hier(logging.DEBUG)
+        self.logger.debug("UVM hierarchy:")
+        self.print_hierarchy(self.logger,self)
+    @staticmethod        
+    def print_hierarchy(logger: logging.Logger,component: uvm_component):
+        child: uvm_component
+        for child in component.children:
+            if isinstance(child,uvm.uvm_export_base):
+                continue
+            logger.debug(f'{child.get_full_name()}')
+            WbAdapterTest.print_hierarchy(logger,child)
 

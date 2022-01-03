@@ -160,32 +160,44 @@ class ReadyValidSinkBfm(_ReadyValidBfm):
         self.bus.ready.value = value
 
 class CoppervBusReadSourceBfm(SimpleBfm):
-    Signals = SimpleBfm.make_signals("CoppervBusReadBfm",[
+    Signals = SimpleBfm.make_signals("CoppervBusReadSourceBfm",[
         "addr_ready", "addr_valid", "addr_bits",
         "data_ready", "data_valid", "data_bits",
     ])
     def __init__(self, clock, entity = None, signals = None, reset=None, reset_n=None, period=10, period_unit="ns", prefix=None):
         super().__init__(clock, signals=signals, entity=entity, reset=reset, reset_n=reset_n, period=period, period_unit=period_unit, prefix=prefix)
-        addr_signals = ReadyValidSourceBfm.Signals(ready=self.bus.addr_ready,valid=self.bus.addr_valid)
+        addr_signals = ReadyValidBfm.Signals(ready=self.bus.addr_ready,valid=self.bus.addr_valid)
         addr_payload = dict(addr=self.bus.addr_bits)
-        data_signals = ReadyValidSinkBfm.Signals(ready=self.bus.data_ready,valid=self.bus.data_valid)
+        data_signals = ReadyValidBfm.Signals(ready=self.bus.data_ready,valid=self.bus.data_valid)
         data_payload = dict(data=self.bus.data_bits)
-        self.addr = ReadyValidSourceBfm(clock,addr_signals,addr_payload,reset_n=reset_n,reset=reset)
-        self.data = ReadyValidSinkBfm(clock,data_signals,data_payload,reset_n=reset_n,reset=reset)
+        self.addr = ReadyValidBfm(clock,addr_signals,addr_payload,reset_n=reset_n,reset=reset)
+        self.data = ReadyValidBfm(clock,data_signals,data_payload,reset_n=reset_n,reset=reset)
+    def get_request(self):
+        return self.addr.recv_payload()
+    def get_response(self):
+        return self.data.recv_payload()
+    async def send_request(self,addr):
+        await self.addr.send_payload(addr=addr)
 
 class CoppervBusWriteSourceBfm(SimpleBfm):
-    Signals = SimpleBfm.make_signals("CoppervBusWriteBfm",[
+    Signals = SimpleBfm.make_signals("CoppervBusWriteSourceBfm",[
         "req_ready", "req_valid", "req_bits_data", "req_bits_addr", "req_bits_strobe",
         "resp_ready", "resp_valid", "resp_bits",
     ])
     def __init__(self, clock, entity = None, signals = None, reset=None, reset_n=None, period=10, period_unit="ns", prefix=None):
         super().__init__(clock, signals=signals, entity=entity, reset=reset, reset_n=reset_n, period=period, period_unit=period_unit, prefix=prefix)
-        req_signals = ReadyValidSourceBfm.Signals(ready=self.bus.req_ready,valid=self.bus.req_valid)
+        req_signals = ReadyValidBfm.Signals(ready=self.bus.req_ready,valid=self.bus.req_valid)
         req_payload=dict(data=self.bus.req_bits_data,addr=self.bus.req_bits_addr,strobe=self.bus.req_bits_strobe)
-        resp_signals = ReadyValidSinkBfm.Signals(ready=self.bus.resp_ready,valid=self.bus.resp_valid)
+        resp_signals = ReadyValidBfm.Signals(ready=self.bus.resp_ready,valid=self.bus.resp_valid)
         resp_payload = dict(resp=self.bus.resp_bits)
-        self.req = ReadyValidSourceBfm(clock,req_signals,req_payload,reset_n=reset_n,reset=reset)
-        self.resp = ReadyValidSinkBfm(clock,resp_signals,resp_payload,reset_n=reset_n,reset=reset)
+        self.req = ReadyValidBfm(clock,req_signals,req_payload,reset_n=reset_n,reset=reset)
+        self.resp = ReadyValidBfm(clock,resp_signals,resp_payload,reset_n=reset_n,reset=reset)
+    def get_request(self):
+        return self.req.recv_payload()
+    def get_response(self):
+        return self.resp.recv_payload()
+    async def send_request(self,data,addr,strobe):
+        await self.req.send_payload(data=data,addr=addr,strobe=strobe)
 
 class CoppervBusBfm(SimpleBfm):
     Signals = SimpleBfm.make_signals("CoppervBusBfm",[

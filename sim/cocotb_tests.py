@@ -112,5 +112,6 @@ async def run_wishbone_adapter_test(dut):
     await wb_bfm.reset()
     #SimLog("bfm").setLevel(logging.DEBUG)
     uvm.ConfigDB().set(None, "*", "WB_BFM", wb_bfm)
-    uvm.ConfigDB().set(None, "*", "BUS_BFM", dict(read=r_bus_bfm,write=w_bus_bfm))
+    uvm.ConfigDB().set(None, "*.bus_read_agent.*", "BFM", r_bus_bfm)
+    uvm.ConfigDB().set(None, "*.bus_write_agent.*", "BFM", w_bus_bfm)
     await uvm.uvm_root().run_test(WbAdapterTest,keep_singletons=True)
