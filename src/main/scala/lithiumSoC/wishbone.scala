@@ -16,15 +16,17 @@ class WishboneSource(addr_width: Int, data_width: Int) extends Bundle {
 }
 
 class WishboneAdapter(addr_width: Int, data_width: Int, resp_width: Int = 0) extends Module with RequireSyncReset {
-  val cpu_w_ch = IO(Flipped(new copperv2.WriteChannel(addr_width=addr_width,data_width=addr_width,resp_width=resp_width)))
-  val cpu_r_ch = IO(Flipped(new copperv2.ReadChannel(addr_width=addr_width,data_width=addr_width)))
+  val bus = IO(new Bundle {
+    val w = Flipped(new copperv2.WriteChannel(addr_width=addr_width,data_width=addr_width,resp_width=resp_width))
+    val r = Flipped(new copperv2.ReadChannel(addr_width=addr_width,data_width=addr_width))
+  })
   val wb = IO(new WishboneSource(addr_width=addr_width,data_width=data_width))
-  cpu_w_ch.req.ready := RegInit(1.B)
-  cpu_r_ch.addr.ready := RegInit(1.B)
-  cpu_w_ch.resp.valid := 0.B
-  cpu_w_ch.resp.bits := 0.B
-  cpu_r_ch.data.valid := 0.B
-  cpu_r_ch.data.bits := 0.B
+  bus.w.req.ready := RegInit(1.B)
+  bus.w.resp.valid := 0.B
+  bus.w.resp.bits := 0.B
+  bus.r.addr.ready := RegInit(1.B)
+  bus.r.data.valid := 0.B
+  bus.r.data.bits := 0.B
   wb.datwr := 0.B
   wb.adr := 0.B
   wb.sel := 0.B
@@ -39,10 +41,10 @@ class WishboneBridge(addr_width: Int, data_width: Int, resp_width: Int) extends 
   val wb_i_bus = IO(new WishboneSource(addr_width,data_width))
   val d_adapter = Module(new WishboneAdapter(addr_width,data_width,resp_width))
   val i_adapter = Module(new WishboneAdapter(addr_width,data_width))
-  cpu_bus.dr <> d_adapter.cpu_r_ch
-  cpu_bus.dw <> d_adapter.cpu_w_ch
-  cpu_bus.ir <> i_adapter.cpu_r_ch
-  0.U.asTypeOf(i_adapter.cpu_w_ch) <> i_adapter.cpu_w_ch
+  cpu_bus.dr <> d_adapter.bus.r
+  cpu_bus.ir <> i_adapter.bus.r
+  cpu_bus.dw <> d_adapter.bus.w
+  0.U.asTypeOf(i_adapter.bus.w) <> i_adapter.bus.w
   wb_d_bus <> d_adapter.wb
   wb_i_bus <> i_adapter.wb
 }
