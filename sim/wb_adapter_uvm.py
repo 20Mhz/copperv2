@@ -1,12 +1,29 @@
 import logging
-from typing import Awaitable
+from typing import Tuple
 import cocotb
 from cocotb.decorators import RunningTask
 from cocotb.triggers import First, Join, PythonTrigger
 import pyuvm as uvm
 import random
-
+import dataclasses
+from types import SimpleNamespace
 from cocotb_utils import anext
+
+def convert2string(self,**kwargs: Tuple[int,str]):
+    res = f'{self.get_name()} : '
+    for attr,properties in kwargs.items():
+        if not hasattr(self,attr):
+            continue
+        width,format = properties
+        divide_by = 1
+        if format.lower() == 'x':
+            divide_by = 4
+        value = getattr(self,attr)
+        string = None
+        if value is not None:
+            string = f'0x{value:0{width//divide_by}{format}}'
+        res += f'{attr}: {string} '
+    return res
 
 class WbSeqItem(uvm.uvm_sequence_item):
     def __init__(self, name):
@@ -15,15 +32,23 @@ class WbSeqItem(uvm.uvm_sequence_item):
         self.data_width = 32
         self.granularity = 8
         self.sel_width = self.data_width // self.granularity
+    def __str__(self):
+        return convert2string(self,
+            data=(self.data_width,'X'),
+            addr=(self.addr_width,'X'),
+            sel=(self.sel_width,'b'),
+            ack=(1,'b')
+        )
 
 class WbReadSeqItem(WbSeqItem):
     def __init__(self, name):
         super().__init__(name)
         self.addr = None
-    def __str__(self):
-        res = f'{self.get_name()} : '
-        res += f'addr: 0x{self.addr:0{self.addr_width//4}X} '
-        return res
+        self.data = None
+        self.ack = None
+    def __eq__(self,other):
+        return self.addr == other.addr and self.data == other.data \
+            and self.ack == other.ack
     def randomize(self):
         self.addr = random.randint(0, (2**self.addr_width)-1)
 
@@ -33,12 +58,10 @@ class WbWriteSeqItem(WbSeqItem):
         self.addr = None
         self.data = None
         self.sel = None
-    def __str__(self):
-        res = f'{self.get_name()} : '
-        res += f'data: 0x{self.data:0{self.data_width//4}X} '
-        res += f'addr: 0x{self.addr:0{self.addr_width//4}X} '
-        res += f'sel: 0b{self.strobe:0{self.sel_width}b}'
-        return res
+        self.ack = None
+    def __eq__(self,other):
+        return self.addr == other.addr and self.data == other.data \
+            and self.sel == other.sel and self.ack == other.ack
     def randomize(self):
         self.addr = random.randint(0, (2**self.addr_width)-1)
         self.data = random.randint(0, (2**self.data_width)-1)
@@ -50,15 +73,22 @@ class BusSeqItem(uvm.uvm_sequence_item):
         self.addr_width = 32
         self.data_width = 32
         self.strobe_width = self.data_width // 8
+        self.resp_width = 1
+    def __str__(self):
+        return convert2string(self,
+            data=(self.data_width,'X'),
+            addr=(self.addr_width,'X'),
+            strobe=(self.strobe_width,'b'),
+            resp=(self.resp_width,'X')
+        )
 
 class BusReadSeqItem(BusSeqItem):
     def __init__(self, name):
         super().__init__(name)
         self.addr = None
-    def __str__(self):
-        res = f'{self.get_name()} : '
-        res += f'addr: 0x{self.addr:0{self.addr_width//4}X} '
-        return res
+        self.data = None
+    def __eq__(self,other):
+        return self.addr == other.addr and self.data == other.data
     def randomize(self):
         self.addr = random.randint(0, (2**self.addr_width)-1)
 
@@ -68,12 +98,10 @@ class BusWriteSeqItem(BusSeqItem):
         self.addr = None
         self.data = None
         self.strobe = None
-    def __str__(self):
-        res = f'{self.get_name()} : '
-        res += f'data: 0x{self.data:0{self.data_width//4}X} '
-        res += f'addr: 0x{self.addr:0{self.addr_width//4}X} '
-        res += f'strobe: 0b{self.strobe:0{self.strobe_width}b}'
-        return res
+        self.resp = None
+    def __eq__(self, other):
+        return self.addr == other.addr and self.data == other.data \
+            and self.strobe == other.strobe and self.resp == other.resp
     def randomize(self):
         self.addr = random.randint(0, (2**self.addr_width)-1)
         self.data = random.randint(0, (2**self.data_width)-1)
@@ -91,36 +119,72 @@ class BusSeq(uvm.uvm_sequence):
             bus_write_tr.randomize()
             await self.finish_item(bus_write_tr)
 
-class WbAdapterScoreboard(uvm.uvm_component):
+@dataclasses.dataclass
+class ScoreboardConfig:
+    input_count: int = 1
+
+class Scoreboard(uvm.uvm_component):
+    def __init__(self, name, parent, config):
+        super().__init__(name, parent)
+        self.config = config
     def build_phase(self):
-        self.bus_req_fifo = uvm.uvm_tlm_analysis_fifo("bus_req_fifo", self)
-        self.bus_resp_fifo = uvm.uvm_tlm_analysis_fifo("bus_resp_fifo", self)
-        self.wb_resp_fifo = uvm.uvm_tlm_analysis_fifo("wb_resp_fifo", self)
-        self.bus_req_port = uvm.uvm_get_port("bus_req_port", self)
-        self.bus_resp_port = uvm.uvm_get_port("bus_resp_port", self)
-        self.wb_resp_port = uvm.uvm_get_port("wb_resp_port", self)
-        self.bus_req_export = self.bus_req_fifo.analysis_export
-        self.bus_resp_export = self.bus_resp_fifo.analysis_export
-        self.wb_resp_export = self.wb_resp_fifo.analysis_export
+        self.fifos = [SimpleNamespace(
+            ref=uvm.uvm_tlm_analysis_fifo(f"ref_fifo_{i}", self),
+            dut=uvm.uvm_tlm_analysis_fifo(f"dut_fifo_{i}", self)) 
+            for i in range(self.config.input_count)]
+        self.ports = [SimpleNamespace(
+            ref=uvm.uvm_get_port(f"ref_port_{i}", self),
+            dut=uvm.uvm_get_port(f"dut_port_{i}", self)) 
+            for i in range(self.config.input_count)]
+        self.exports = [SimpleNamespace(
+            ref=fifo.ref.analysis_export,
+            dut=fifo.dut.analysis_export)
+            for fifo in self.fifos]
     def connect_phase(self):
-        self.bus_req_port.connect(self.bus_req_fifo.get_export)
-        self.bus_resp_port.connect(self.bus_resp_fifo.get_export)
-        self.wb_resp_port.connect(self.wb_resp_fifo.get_export)
+        for port,fifo in zip(self.ports,self.fifos):
+            port.ref.connect(fifo.ref.get_export)
+            port.dut.connect(fifo.dut.get_export)
     def check_phase(self):
-        while self.bus_req_port.can_get():
-            _, bus_req = self.bus_req_port.try_get()
-            bus_resp_success, bus_resp = self.bus_resp_port.try_get()
-            _, wb_resp = self.wb_resp_port.try_get()
-            if not bus_resp_success:
-                self.logger.critical(f"Bus request {bus_req} had no response")
-                assert False
-            else:
-                ref = wb_resp
-                if ref == bus_resp:
-                    self.logger.info(f"PASSED: {ref} = {bus_resp}")
-                else:
-                    self.logger.error(f"FAILED: {ref} != {bus_resp}")
+        for port in self.ports:
+            while port.ref.can_get():
+                _, ref = port.ref.try_get()
+                dut_success, dut = port.dut.try_get()
+                if not dut_success:
+                    self.logger.critical(f"Reference transaction {ref} had no DUT transaction")
                     assert False
+                else:
+                    if ref == dut:
+                        self.logger.info(f"PASSED: {ref} == {dut}")
+                    else:
+                        self.logger.error(f"FAILED: {ref} != {dut}")
+                        assert False
+
+class uvm_AnalysisImp(uvm.uvm_analysis_export):
+    def __init__(self, name, parent, write_fn):
+        super().__init__(name, parent)
+        self.write_fn = write_fn
+    def write(self,data):
+        return self.write_fn(data)
+
+class WbAdapterRefModel(uvm.uvm_component):
+    def build_phase(self):
+        self.resp_ap = uvm.uvm_analysis_port("resp_ap", self)
+        self.req_ap = uvm.uvm_analysis_port("req_ap", self)
+        self.req_export = uvm_AnalysisImp("req_export",self,self.write)
+        self.resp_export = uvm_AnalysisImp("resp_export",self,self.write)
+    def write(self, data):
+        if isinstance(data,WbReadSeqItem):
+            ref = BusReadSeqItem(data.get_name())
+            ref.addr = data.addr
+            ref.data = data.data
+        if isinstance(data,WbWriteSeqItem):
+            ref = BusWriteSeqItem(data.get_name())
+            ref.addr = data.addr
+            ref.data = data.data
+            ref.strobe = data.sel
+            ref.resp = data.ack
+        self.logger.debug(f"WbAdapterRefModel write: {data} -> {ref}")
+        self.ref_ap.write(ref)
 
 class WbMonitor(uvm.uvm_component):
     def __init__(self, name, parent):
@@ -218,19 +282,25 @@ class BusSourceAgent(uvm.uvm_agent):
         if self.active:
             self.req_driver.seq_item_port.connect(self.seqr.seq_item_export)
 
-class Debugger(uvm.uvm_export_base):
+class Debugger(uvm.uvm_subscriber):
     def write(self,data):
-        print('DEBUGGER:',data)
+        print(f'DEBUGGER: {self.get_full_name()}:',data)
 
 class WbAdapterEnv(uvm.uvm_env):
     def build_phase(self):
+        scoreboard_config = ScoreboardConfig(input_count=2)
         self.bus_agent = BusSourceAgent("bus_agent", self)
         self.wb_agent = WbSinkAgent("wb_agent", self)
-        self.scoreboard = WbAdapterScoreboard("scoreboard", self)
+        self.scoreboard = Scoreboard("scoreboard", self, scoreboard_config)
+        self.ref_model = WbAdapterRefModel('ref_model',self)
     def connect_phase(self):
-        self.bus_agent.req_ap.connect(self.scoreboard.bus_req_export)
-        self.bus_agent.resp_ap.connect(self.scoreboard.bus_resp_export)
-        self.wb_agent.resp_ap.connect(self.scoreboard.wb_resp_export)
+        print(self.scoreboard.fifos[1].dut.analysis_export,self.scoreboard.exports[1].dut)
+        self.bus_agent.resp_ap.connect(self.scoreboard.exports[0].dut)
+        self.ref_model.resp_ap.connect(self.scoreboard.exports[0].ref)
+        self.bus_agent.req_ap.connect(self.scoreboard.exports[1].ref)
+        self.ref_model.req_ap.connect(self.scoreboard.exports[1].dut)
+        self.wb_agent.resp_ap.connect(self.ref_model.resp_export)
+        self.wb_agent.req_ap.connect(self.ref_model.req_export)
 
 class WbAdapterTest(uvm.uvm_test):
     def build_phase(self):
