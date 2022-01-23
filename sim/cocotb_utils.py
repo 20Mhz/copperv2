@@ -83,6 +83,10 @@ class SimpleBfm(Bfm):
 def anext(async_generator):
     return RunningTask(async_generator.__anext__())
 
+async def Combine(*triggers):
+    c = await cocotb.triggers.Combine(*triggers)
+    return [t.retval for t in c.triggers]
+
 def get_top_module(name):
     return cocotb.handle.SimHandle(cocotb.simulator.get_root_handle(name))
 

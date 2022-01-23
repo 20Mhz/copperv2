@@ -4,13 +4,16 @@ import os
 from pathlib import Path
 
 import cocotb
+from cocotb.triggers import Combine
 from cocotb.log import SimLog
 import toml
+import cocotb_utils as utils
 
 from testbench import Testbench
 from riscv_utils import compile_instructions, parse_data_memory, compile_riscv_test
 
 import pyuvm as uvm
+from wb_adapter_uvm import WbAdapterTest
 
 from bus import CoppervBusSourceBfm
 from wishbone import WishboneBfm
@@ -46,7 +49,7 @@ class TestParameters:
         return '\n' + p
 
 @cocotb.test(timeout_time=10,timeout_unit="us")
-async def run_unit_test(dut):
+async def unit_test(dut):
     """ Copperv unit tests """
     test_name = os.environ['TEST_NAME']
     params = TestParameters(test_name,**unit_tests[test_name])
@@ -67,7 +70,7 @@ async def run_unit_test(dut):
     await tb.finish()
 
 @cocotb.test(timeout_time=100,timeout_unit="us")
-async def run_riscv_test(dut):
+async def riscv_test(dut):
     """ RISCV compliance tests """
     test_name = os.environ['TEST_NAME']
     asm_path = Path(os.environ['ASM_PATH'])
@@ -86,10 +89,8 @@ async def run_riscv_test(dut):
     await tb.bus_bfm.reset()
     await tb.end_test.wait()
 
-from wb_adapter_uvm import WbAdapterTest
-
 @cocotb.test(timeout_time=1,timeout_unit="us")
-async def run_wishbone_adapter_test(dut):
+async def verify_wishbone_adapter_test(dut):
     """ Wishbone adapter tests """
     wb_bfm = WishboneBfm(
         clock=dut.clock,
@@ -108,3 +109,31 @@ async def run_wishbone_adapter_test(dut):
     uvm.ConfigDB().set(None, "*.wb_agent.*", "BFM", wb_bfm)
     uvm.ConfigDB().set(None, "*.bus_agent.*", "BFM", bus_bfm)
     await uvm.uvm_root().run_test(WbAdapterTest,keep_singletons=True)
+
+@cocotb.test(timeout_time=1,timeout_unit="us")
+async def wishbone_adapter_read_test(dut):
+    """ Wishbone adapter read test """
+    wb_bfm = WishboneBfm(
+        clock=dut.clock,
+        reset=dut.reset,
+        entity=dut,
+        prefix="wb_")
+    bus_bfm = CoppervBusSourceBfm(
+        clock=dut.clock,
+        reset=dut.reset,
+        entity=dut,
+        prefix="bus_")
+    wb_bfm.start_clock()
+    await wb_bfm.reset()
+    data = 101
+    addr = 123
+    await bus_bfm.send_read_request(addr)
+    cocotb.start_soon(wb_bfm.sink_reply(data))
+    wb_recv, bus_resp_recv, bus_req_recv = await utils.Combine(
+        utils.anext(wb_bfm.sink_receive()),
+        utils.anext(bus_bfm.get_read_response()),
+        utils.anext(bus_bfm.get_read_request()))
+    assert wb_recv["addr"] == addr
+    assert wb_recv["data"] == data
+    assert bus_req_recv["addr"] == addr
+    assert bus_resp_recv["data"] == data

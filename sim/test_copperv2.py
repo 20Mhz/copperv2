@@ -33,7 +33,7 @@ def test_unit(parameters):
         **common_run_opts,
         extra_env=parameters,
         sim_build=f"work/sim/test_unit_{parameters['TEST_NAME']}",
-        testcase = "run_unit_test",
+        testcase = "unit_test",
     )
 
 @pytest.mark.parametrize(
@@ -45,5 +45,5 @@ def test_riscv(parameters):
         **common_run_opts,
         extra_env=parameters,
         sim_build=f"work/sim/test_riscv_{parameters['TEST_NAME']}",
-        testcase = "run_riscv_test",
+        testcase = "riscv_test",
     )
