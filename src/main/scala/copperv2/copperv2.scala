@@ -268,5 +268,5 @@ object Copperv2Driver extends App {
   (new ChiselStage).emitVerilog(new copperv2.Copperv2, verilog_args ++ Array("-o","copperv2.v"))
 //  (new ChiselStage).execute(Array("--emit-modules", "verilog"),Seq(ChiselGeneratorAnnotation(() => new copperv2.copperv2)))
   (new ChiselStage).emitVerilog(new wishbone.WishboneAdapter(32,32,1), verilog_args ++ Array("-o","wb_adapter.v"))
-  (new ChiselStage).emitVerilog(new lithium.LithiumSoC, verilog_args ++ Array("-o","lithium_top.v"))
+  (new ChiselStage).emitVerilog(new copperv2.CoppervSoC, verilog_args ++ Array("-o","copperv_soc_top.v"))
 }

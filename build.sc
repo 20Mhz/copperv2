@@ -24,9 +24,4 @@ object copperv2 extends SbtModule { m =>
     ivy"edu.berkeley.cs:::chisel3-plugin:3.5.0-RC2",
     ivy"org.scalamacros:::paradise:2.1.1"
   )
-//  object test extends Tests with ScalaTest {
-//    override def ivyDeps = m.ivyDeps() ++ Agg(
-//      ivy"edu.berkeley.cs::chiseltest:0.3.3"
-//    )
-//  }
 }

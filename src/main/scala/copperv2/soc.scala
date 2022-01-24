@@ -1,9 +1,9 @@
-package lithium
+package copperv2
 
 import chisel3._
 import wishbone._
 
-class LithiumSoC extends Module with RequireSyncReset {
+class CoppervSoC extends Module with RequireSyncReset {
   val cpu_config = new copperv2.Copperv2Config()
   val wb_i = IO(new WishboneSource(cpu_config.addr_width,cpu_config.data_width))
   val wb_d = IO(new WishboneSource(cpu_config.addr_width,cpu_config.data_width))
