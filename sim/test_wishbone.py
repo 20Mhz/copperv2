@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 from cocotb_test.simulator import run
 
@@ -21,6 +22,7 @@ common_run_opts = dict(
     waves = True,
 )
 
+@pytest.mark.skip(reason="UVM is WIP")
 def test_wishbone_adapter_verify():
     run(
         **common_run_opts,
@@ -33,4 +35,11 @@ def test_wishbone_adapter_read():
         **common_run_opts,
         sim_build=f"work/sim/test_wishbone_adapter_read",
         testcase = "wishbone_adapter_read_test",
+    )
+
+def test_wishbone_adapter_write():
+    run(
+        **common_run_opts,
+        sim_build=f"work/sim/test_wishbone_adapter_write",
+        testcase = "wishbone_adapter_write_test",
     )

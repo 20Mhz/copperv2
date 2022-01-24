@@ -1,6 +1,7 @@
 package lithium
 
 import chisel3._
+import wishbone._
 
 class LithiumSoC extends Module with RequireSyncReset {
   val cpu_config = new copperv2.Copperv2Config()

@@ -45,6 +45,7 @@ class WishboneBfm(SimpleBfm):
         self.bus.cyc.value = 0
         self.bus.stb.value = 0
     async def source_receive(self):
+        """ Receive WB source transaction: ack and datrd"""
         while True:
             await RisingEdge(self.clock)
             await ReadOnly()
@@ -57,6 +58,7 @@ class WishboneBfm(SimpleBfm):
                     received['data'] = self.bus.datrd.value.integer
                 yield received
     async def sink_receive(self):
+        """ Receive WB sink transaction: addr, datwr and sel """
         while True:
             await RisingEdge(self.clock)
             await ReadOnly()
@@ -64,13 +66,12 @@ class WishboneBfm(SimpleBfm):
                 self.log.debug(f"WB sink receive in_reset true, continue...")
                 continue
             if self.bus.cyc.value.binstr == "1" and self.bus.stb.value.binstr == "1":
-                self.log.debug("Enter if!")
                 received = dict(addr=int(self.bus.adr.value))
                 if self.bus.we.value.binstr == "1":
                     received['data'] = int(self.bus.datwr.value)
                     if self.has_sel:
                         received['sel'] = int(self.bus.sel.value)
-                self.log.debug(f"Received {received}")
+                self.log.debug(f"WB sink received {received}")
                 yield received
     async def sink_reply(self,data=None):
         await RisingEdge(self.clock)

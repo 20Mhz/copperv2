@@ -15,6 +15,8 @@ class Copperv2Config {
 }
 
 class ReadChannel(addr_width: Int, data_width: Int) extends Bundle {
+  def req = addr
+  def resp = data
   // Output
   val addr = Decoupled(UInt(addr_width.W))
   // Input
@@ -265,6 +267,6 @@ object Copperv2Driver extends App {
   val verilog_args = Array("--target-dir", "work/rtl") ++ args
   (new ChiselStage).emitVerilog(new copperv2.Copperv2, verilog_args ++ Array("-o","copperv2.v"))
 //  (new ChiselStage).execute(Array("--emit-modules", "verilog"),Seq(ChiselGeneratorAnnotation(() => new copperv2.copperv2)))
-  (new ChiselStage).emitVerilog(new lithium.WishboneAdapter(32,32,1), verilog_args ++ Array("-o","wb_adapter.v"))
+  (new ChiselStage).emitVerilog(new wishbone.WishboneAdapter(32,32,1), verilog_args ++ Array("-o","wb_adapter.v"))
   (new ChiselStage).emitVerilog(new lithium.LithiumSoC, verilog_args ++ Array("-o","lithium_top.v"))
 }

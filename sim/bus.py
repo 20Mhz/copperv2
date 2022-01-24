@@ -2,7 +2,7 @@ import dataclasses
 import typing
 
 import cocotb
-from cocotb.triggers import RisingEdge, ReadOnly, NextTimeStep, ClockCycles
+from cocotb.triggers import RisingEdge, ReadOnly, NextTimeStep, Combine
 from cocotb_bus.monitors import Monitor
 from cocotb_bus.drivers import Driver
 from cocotb.log import SimLog
@@ -91,6 +91,10 @@ class ReadyValidBfm(SimpleBfm):
         super().__init__(signals=signals, period=period, period_unit=period_unit, reset=reset, reset_n=reset_n, clock=clock)
         if init_valid:
             self.bus.valid.setimmediatevalue(0)
+    def sink_init(self):
+        self.bus.ready.setimmediatevalue(0)
+    def source_init(self):
+        self.bus.valid.setimmediatevalue(0)
     async def recv_payload(self):
         while(True):
             await RisingEdge(self.clock)
@@ -129,18 +133,27 @@ class CoppervBusSourceBfm(SimpleBfm):
     ])
     def __init__(self, clock, entity = None, signals = None, reset=None, reset_n=None, period=10, period_unit="ns", prefix=None):
         super().__init__(clock, signals=signals, entity=entity, reset=reset, reset_n=reset_n, period=period, period_unit=period_unit, prefix=prefix)
-        addr_signals = ReadyValidBfm.Signals(ready=self.bus.r_addr_ready,valid=self.bus.r_addr_valid)
         addr_payload = dict(addr=self.bus.r_addr_bits)
-        data_signals = ReadyValidBfm.Signals(ready=self.bus.r_data_ready,valid=self.bus.r_data_valid)
         data_payload = dict(data=self.bus.r_data_bits)
+        req_payload=dict(data=self.bus.w_req_bits_data,addr=self.bus.w_req_bits_addr,strobe=self.bus.w_req_bits_strobe)
+        resp_payload = dict(resp=self.bus.w_resp_bits)
+        addr_signals = ReadyValidBfm.Signals(ready=self.bus.r_addr_ready,valid=self.bus.r_addr_valid)
+        data_signals = ReadyValidBfm.Signals(ready=self.bus.r_data_ready,valid=self.bus.r_data_valid)
+        req_signals = ReadyValidBfm.Signals(ready=self.bus.w_req_ready,valid=self.bus.w_req_valid)
+        resp_signals = ReadyValidBfm.Signals(ready=self.bus.w_resp_ready,valid=self.bus.w_resp_valid)
         self.addr = ReadyValidBfm(clock,addr_signals,addr_payload,reset_n=reset_n,reset=reset)
         self.data = ReadyValidBfm(clock,data_signals,data_payload,reset_n=reset_n,reset=reset)
-        req_signals = ReadyValidBfm.Signals(ready=self.bus.w_req_ready,valid=self.bus.w_req_valid)
-        req_payload=dict(data=self.bus.w_req_bits_data,addr=self.bus.w_req_bits_addr,strobe=self.bus.w_req_bits_strobe)
-        resp_signals = ReadyValidBfm.Signals(ready=self.bus.w_resp_ready,valid=self.bus.w_resp_valid)
-        resp_payload = dict(resp=self.bus.w_resp_bits)
         self.req = ReadyValidBfm(clock,req_signals,req_payload,reset_n=reset_n,reset=reset)
         self.resp = ReadyValidBfm(clock,resp_signals,resp_payload,reset_n=reset_n,reset=reset)
+    def init(self):
+        self.addr.source_init()
+        self.req.source_init()
+        self.data.sink_init()
+        self.resp.sink_init()
+    async def drive_ready(self,value):
+        t1 = cocotb.start_soon(self.data.drive_ready(value))
+        t2 = cocotb.start_soon(self.resp.drive_ready(value))
+        return Combine(t1,t2)
     def get_read_request(self):
         return self.addr.recv_payload()
     def get_read_response(self):

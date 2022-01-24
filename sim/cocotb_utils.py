@@ -6,6 +6,7 @@ from cocotb.decorators import RunningTask
 from cocotb.log import SimLog
 from cocotb.triggers import RisingEdge, ReadOnly, NextTimeStep, FallingEdge
 from cocotb.clock import Clock
+from cocotb.types import Logic
 
 import typing
 import dataclasses
@@ -53,10 +54,10 @@ class SimpleBfm(Bfm):
     def in_reset(self):
         """Boolean flag showing whether the bus is in reset state or not."""
         if self._reset is not None:
-            self.log.debug(f"in_reset: {self._reset._name}")
+            # self.log.debug(f"[{self.__class__.__qualname__}] in_reset: {self._reset._name}")
             return bool(self._reset.value.integer)
         if self._reset_n is not None:
-            self.log.debug(f"in_reset: {self._reset_n._name}")
+            # self.log.debug(f"[{self.__class__.__qualname__}] in_reset: {self._reset_n._name}")
             return not bool(self._reset_n.value.integer)
         return False
     def start_clock(self):
@@ -73,11 +74,12 @@ class SimpleBfm(Bfm):
             await RisingEdge(self.clock)
             self._reset_n.value = 1
     async def wait_for_signal(self,signal,value):
-        self.log.debug(f"wait_for_signal: {signal._name}")
+        self.log.debug(f"wait_for_signal: {signal._name} value {value}")
         await ReadOnly()
-        while self.in_reset or signal.value.binstr != str(value):
+        while self.in_reset or Logic(signal.value.binstr) != Logic(value):
             await RisingEdge(self.clock)
             await ReadOnly()
+        self.log.debug(f"wait_for_signal: {signal._name} value {value} return")
         await NextTimeStep()
 
 def anext(async_generator):
