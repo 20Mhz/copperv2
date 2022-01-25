@@ -2,6 +2,7 @@
 
 PYTHON ?= $(if $(shell which python),python,python3)
 SHELL = bash
+WBXBAR_SOURCE := src/main/resources/external/wb2axip/rtl/wbxbar.v
 
 .PHONY: all
 all: work/sim/result.xml
@@ -15,7 +16,10 @@ clean:
 	source .venv/bin/activate; pip install wheel
 	source .venv/bin/activate; pip install -r requirements.txt
 
-work/rtl/copperv2.v: $(shell find ./src -name '*.scala' -o -name '*.v')
+$(WBXBAR_SOURCE):
+	git submodule update --init
+
+work/rtl/copperv2.v: $(WBXBAR_SOURCE) $(shell find ./src -name '*.scala' -o -name '*.v')
 	./scripts/mill copperv2.run $(CHISELFLAGS)
 
 work/sim/result.xml: work/rtl/copperv2.v .venv $(shell find ./sim -name '*.py')
