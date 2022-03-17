@@ -179,7 +179,7 @@ SECTIONS
   } >mem
   _edata = .; PROVIDE (edata = .);
   . = .;
-  __bss_start = .;
+  __BSS_START__ = .;
   .sbss           :
   {
     *(.dynsbss)

@@ -1,6 +1,4 @@
 
-hello_world.elf: hello_world.o
-
-CFLAGS += -DENTRY_POINT=main
+hello_world.hex: hello_world.o
 
 include ../common/Makefile

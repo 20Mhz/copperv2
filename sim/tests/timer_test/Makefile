@@ -1,6 +1,4 @@
 
-timer_test.elf: timer_test.o
-
-CFLAGS += -DENTRY_POINT=main
+timer_test.hex: timer_test.o
 
 include ../common/Makefile

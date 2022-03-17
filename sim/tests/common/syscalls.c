@@ -108,10 +108,11 @@ static void init_tls()
   memset(thread_pointer + tdata_size, 0, tbss_size);
 }
 
-void _init(int cid, int nc)
+//void _init(int cid, int nc)
+void _init(void)
 {
-  init_tls();
-  thread_entry(cid, nc);
+//  init_tls();
+//  thread_entry(cid, nc);
 
   // only single-threaded programs should ever get here.
   int ret = main(0, 0);
@@ -348,6 +349,12 @@ static void vprintfmt(void (*putch)(int, void**), void **putdat, const char *fmt
       break;
     }
   }
+}
+
+int puts ( const char * str ){
+    printstr(str);
+    printstr("\n");
+    return 0; // incorrect return value, but who cares, anyway?
 }
 
 int printf(const char* fmt, ...)
