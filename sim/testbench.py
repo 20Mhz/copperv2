@@ -102,8 +102,6 @@ class Testbench():
         ## Regfile
         self.regfile_write_monitor = RegFileWriteMonitor("regfile_write",regfile_bfm)
         self.regfile_read_monitor = RegFileReadMonitor("regfile_read",regfile_bfm)
-        ## Stack Monitor
-        #StackMonitor(self.regfile_write_monitor)
         if enable_self_checking:
             ## Self checking
             self.scoreboard = Scoreboard(dut)

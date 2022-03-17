@@ -18,12 +18,6 @@ from wb_adapter_uvm import WbAdapterTest
 from bus import CoppervBusSourceBfm
 from wishbone import WishboneBfm
 
-if os.environ.get("VS_DEBUG",False):
-    import debugpy
-    debugpy.listen(4440)
-    print("Info: debugpy waiting for client...")
-    debugpy.wait_for_client()
-
 root_dir = Path(__file__).resolve().parent.parent
 sim_dir = root_dir/'sim'
 toml_path = sim_dir/"tests/unit_tests.toml"

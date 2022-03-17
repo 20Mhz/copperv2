@@ -7,6 +7,7 @@ from elftools.elf.elffile import ELFFile
 from regfile import RegFileWriteTransaction
 from bus import BusWriteTransaction, BusReadTransaction
 from cocotb_utils import run, to_bytes
+from cocotb.triggers import Edge
 
 sim_dir = Path(__file__).resolve().parent
 linker_script = sim_dir/'tests/common/linker.ld'
@@ -93,23 +94,26 @@ def parse_data_memory(params_data_memory):
     return data_memory
 
 class StackMonitor:
-    def __init__(self,regfile_write_monitor: Monitor):
+    def __init__(self,regfile_write_monitor: Monitor, pc_monitor: Monitor):
         self.log = SimLog('cocotb.'+__name__+'.'+self.__class__.__name__)
         regfile_write_monitor.add_callback(self.regfile_callback)
+        pc_monitor.add_callback(self.pc_callback)
         self.stack_pointer = None
         self.skip = 2
         self.stack = []
         self.direction = 'in'
-        self.return_address = 0
+        self.pc = None
     def stack_push(self,new):
         if len(self.stack) == 0 or new != self.stack[-1]:
-            self.log.debug('Stack: [%s] <- 0x%X',self.stack_string(),new)
+            self.log.debug('Stack push: [%s] 0x%X',self.stack_string(),new)
             self.stack.append(new)
     def stack_pop(self):
         old = self.stack.pop()
-        self.log.debug('Stack: [%s] -> 0x%X',self.stack_string(),old)
+        self.log.debug('Stack pop:  [%s] 0x%X',self.stack_string(),old)
     def stack_string(self):
         return ', '.join([f'0x{i:X}' for i in self.stack])
+    def pc_callback(self, value: int):
+        self.pc = value
     def regfile_callback(self,transaction: RegFileWriteTransaction):
         if transaction.reg_name == 'sp':
             if self.skip > 0:
@@ -122,7 +126,18 @@ class StackMonitor:
                 if self.direction == 'out':
                     self.stack_pop()
                 elif self.direction == 'in':
-                    self.stack_push(self.return_address)
-        if transaction.reg_name == 'ra':
-            self.return_address = transaction.data
-            #self.log.debug('stackmonitor regfile %s',transaction)
+                    self.stack_push(self.pc)
+
+class PcMonitor(Monitor):
+    def __init__(self,name,pc,callback=None,event=None):
+        self.name = name
+        self.log = SimLog(f"cocotb.{self.name}")
+        self.pc = pc
+        super().__init__(callback=callback,event=event)
+    async def _monitor_recv(self):
+        while True:
+            await Edge(self.pc)
+            value = int(self.pc.value)
+            self.log.debug("Program counter: 0x%X", value)
+            self._recv(value)
+

@@ -58,7 +58,7 @@ class RegFileReadTransaction:
         data1 = f'0x{self.data1:X}' if self.data1 is not None else None
         data2 = f'0x{self.data2:X}' if self.data2 is not None else None
         return f'RegFileReadTransaction(reg1={self.reg1_name}, data1={data1}, reg2={self.reg2_name}, data1={data2})'
-                
+
 class RegFileBfm(SimpleBfm):
     Signals = SimpleBfm.make_signals("RegFileBfmSignals",[
         "rd_en",

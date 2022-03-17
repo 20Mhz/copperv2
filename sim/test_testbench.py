@@ -15,12 +15,6 @@ from bus import ReadyValidBfm
 from cocotb_utils import anext
 from wishbone import WishboneBfm
 
-if os.environ.get("VS_DEBUG",False):
-    import debugpy
-    debugpy.listen(4440)
-    print("Info: debugpy waiting for client...")
-    debugpy.wait_for_client()
-
 root_dir = Path(__file__).resolve().parent.parent
 work_dir = root_dir/'work/sim/test_testbench'
 work_dir.mkdir(exist_ok=True,parents=True)
