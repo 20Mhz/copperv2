@@ -12,6 +12,7 @@ clean:
 	rm -rf work/rtl work/sim out/
 
 .venv: requirements.txt
+	rm -rf .venv
 	$(PYTHON) -m venv .venv
 	source .venv/bin/activate; pip install wheel
 	source .venv/bin/activate; pip install -r requirements.txt
